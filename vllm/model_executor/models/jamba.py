@@ -21,6 +21,7 @@ from vllm.model_executor.layers.linear import (ColumnParallelLinear,
                                                ReplicatedLinear,
                                                RowParallelLinear)
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
+from vllm.model_executor.layers.mamba.mamba_mixer import MambaMixer
 from vllm.model_executor.layers.mamba.ops.causal_conv1d import (
     causal_conv1d_fn, causal_conv1d_update)
 from vllm.model_executor.layers.mamba.ops.mamba_ssm import (
@@ -41,13 +42,6 @@ from vllm.worker.model_runner import (_BATCH_SIZES_TO_CAPTURE,
 from .interfaces import SupportsLoRA
 
 KVCache = Tuple[torch.Tensor, torch.Tensor]
-
-
-@dataclass
-class MambaCacheParams:
-    is_prompt: bool = False
-    conv_state: torch.Tensor = torch.Tensor()
-    ssm_state: torch.Tensor = torch.Tensor()
 
 
 # Adapted from transformers.models.mamba.modeling_mamba.MambaMixer
@@ -123,7 +117,7 @@ class JambaMambaDecoderLayer(nn.Module):
         super().__init__()
         self.layer_idx = layer_idx
         self.config = config
-        self.mamba = JambaMambaMixer(config, layer_idx)
+        self.mamba = MambaMixer(config)
 
         num_experts = config.layers_num_experts[layer_idx]
         ffn_layer_class = JambaMoE if num_experts > 1 else JambaMLP
