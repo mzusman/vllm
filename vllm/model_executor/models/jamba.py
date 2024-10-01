@@ -44,7 +44,6 @@ from .interfaces import SupportsLoRA
 KVCache = Tuple[torch.Tensor, torch.Tensor]
 
 
-# Adapted from transformers.models.mamba.modeling_mamba.MambaMixer
 class JambaMoE(nn.Module):
 
     def __init__(self,
@@ -115,9 +114,18 @@ class JambaMambaDecoderLayer(nn.Module):
                  cache_config: Optional[CacheConfig] = None,
                  quant_config: Optional[QuantizationConfig] = None) -> None:
         super().__init__()
-        self.layer_idx = layer_idx
         self.config = config
-        self.mamba = MambaMixer(config)
+        self.mamba = MambaMixer(hidden_size= config.hidden_size,
+                                ssm_state_size = config.mamba_d_state,
+                                conv_kernel_size = config.mamba_d_conv,
+                                intermediate_size = config.mamba_expand *\
+                                                    config.hidden_size,
+                                time_step_rank = config.mamba_dt_rank,
+                                use_conv_bias = config.mamba_conv_bias,
+                                use_bias = config.mamba_proj_bias,
+                                use_rms_norm=True,
+                                rms_norm_eps=config.rms_norm_eps,
+                                activation=config.hidden_act)
 
         num_experts = config.layers_num_experts[layer_idx]
         ffn_layer_class = JambaMoE if num_experts > 1 else JambaMLP

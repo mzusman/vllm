@@ -12,6 +12,7 @@ from vllm.model_executor.layers.mamba.ops.mamba_ssm import selective_scan_fn, se
 from vllm.model_executor.utils import set_weight_attrs
 
       
+# Adapted from transformers.models.mamba.modeling_mamba.MambaMixer
 class MambaMixer(CustomOp):
     """
     Compute ∆, A, B, C, and D the state space parameters and compute
@@ -35,27 +36,16 @@ class MambaMixer(CustomOp):
                        activation = "silu"
                        ):
         super().__init__()
-        self.hidden_size = hidden_size
-        self.ssm_state_size = ssm_state_size
-        self.conv_kernel_size = conv_kernel_size
-        self.intermediate_size = intermediate_size
         self.time_step_rank = time_step_rank
-        self.use_conv_bias = use_conv_bias
-        self.use_bias = use_bias
-        self.use_rms_norm = use_rms_norm
+        self.ssm_state_size = ssm_state_size
         self.use_rms_norm = use_rms_norm
         self.activation = activation
-        # self.ssm_state_size = config.mamba_d_state
-        # self.conv_kernel_size = config.mamba_d_conv
-        # self.intermediate_size = config.mamba_expand * config.hidden_size
-        # self.time_step_rank = config.mamba_dt_rank
-        # self.use_conv_bias = config.mamba_conv_bias
-        # self.use_bias = config.mamba_proj_bias
+      
 
         self.conv1d = ColumnParallelLinear(
-            input_size=self.conv_kernel_size,
-            output_size=self.intermediate_size,
-            bias=self.use_conv_bias,
+            input_size=conv_kernel_size,
+            output_size=intermediate_size,
+            bias=use_conv_bias,
         )
         # unsqueeze to fit conv1d weights shape into the linear weights shape.
         # Can't do this in `weight_loader` since it already exists in
@@ -63,20 +53,20 @@ class MambaMixer(CustomOp):
         # doesn't allow to override it
         self.conv1d.weight.data = self.conv1d.weight.data.unsqueeze(1)
 
-        self.in_proj = ColumnParallelLinear(self.hidden_size,
-                                                  self.intermediate_size * 2,
-                                                  bias=self.use_bias)
+        self.in_proj = ColumnParallelLinear(hidden_size,
+                                                  intermediate_size * 2,
+                                                  bias=use_bias)
         # selective projection used to make dt, B and C input dependent
         self.x_proj = RowParallelLinear(
-            self.intermediate_size,
-            self.time_step_rank + self.ssm_state_size * 2,
+            intermediate_size,
+            time_step_rank + ssm_state_size * 2,
             bias=False,
         )
         # time step projection (discretization) -
         # In the forward we need to apply dt_proj without the bias,
         # as the bias is added in the selective scan kernel.
-        self.dt_proj = ColumnParallelLinear(self.time_step_rank,
-                                            self.intermediate_size,
+        self.dt_proj = ColumnParallelLinear(time_step_rank,
+                                            intermediate_size,
                                             bias=True,
                                             skip_bias_add=True)
 
@@ -93,36 +83,36 @@ class MambaMixer(CustomOp):
         tp_size = get_tensor_model_parallel_world_size()
         self.A = nn.Parameter(
             torch.empty(
-                self.intermediate_size // tp_size,
-                self.ssm_state_size,
+                intermediate_size // tp_size,
+                ssm_state_size,
                 dtype=torch.float32,
             ))
-        self.D = nn.Parameter(torch.ones(self.intermediate_size // tp_size))
+        self.D = nn.Parameter(torch.ones(intermediate_size // tp_size))
 
         set_weight_attrs(self.D, {"weight_loader": weight_loader})
         set_weight_attrs(self.A, {"weight_loader": A_weight_loader})
 
         self.out_proj = RowParallelLinear(
-            self.intermediate_size,
-            self.hidden_size,
-            bias=self.use_bias,
+            intermediate_size,
+            hidden_size,
+            bias=use_bias,
             input_is_parallel=True,
         )
 
         self.dt_layernorm = RMSNorm(
-            self.time_step_rank,
-            eps=self.rms_norm_eps
-        ) if self.use_rms_norm else None
+            time_step_rank,
+            eps=rms_norm_eps
+        ) if use_rms_norm else None
 
         self.b_layernorm = RMSNorm(
-            self.ssm_state_size,
-            eps=self.rms_norm_eps
-        ) if self.use_rms_norm else None
+            ssm_state_size,
+            eps=rms_norm_eps
+        ) if use_rms_norm else None
 
         self.c_layernorm = RMSNorm(
-            self.ssm_state_size,
-            eps=self.rms_norm_eps
-        ) if self.use_rms_norm else None
+            ssm_state_size,
+            eps=rms_norm_eps
+        ) if use_rms_norm else None
 
 
     def forward_native(
