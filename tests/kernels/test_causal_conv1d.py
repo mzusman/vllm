@@ -6,7 +6,8 @@ import torch
 from tests.kernels.utils import opcheck
 from vllm import _custom_ops as ops  # noqa: F401
 from vllm.model_executor.layers.mamba.ops.causal_conv1d import (
-    causal_conv1d_fn, causal_conv1d_native, causal_conv1d_update, causal_conv1d_update_native)
+    causal_conv1d_fn, causal_conv1d_native, causal_conv1d_update,
+    causal_conv1d_update_native)
 from vllm.utils import seed_everything
 
 
@@ -151,10 +152,10 @@ def test_causal_conv1d_update(dim, width, seqlen, has_bias, silu_activation,
                                bias,
                                activation=activation)
     out_ref = causal_conv1d_update_native(x,
-                                       conv_state_ref,
-                                       weight,
-                                       bias,
-                                       activation=activation)
+                                          conv_state_ref,
+                                          weight,
+                                          bias,
+                                          activation=activation)
 
     assert torch.equal(conv_state, conv_state_ref)
     assert torch.allclose(out, out_ref, rtol=rtol, atol=atol)
@@ -217,10 +218,10 @@ def test_causal_conv1d_update_with_batch_gather(dim, width, seqlen, has_bias,
                                activation=activation,
                                conv_state_indices=conv_state_indices)
     out_ref = causal_conv1d_update_native(x,
-                                       conv_state_ref,
-                                       weight,
-                                       bias,
-                                       activation=activation)
+                                          conv_state_ref,
+                                          weight,
+                                          bias,
+                                          activation=activation)
 
     assert torch.equal(conv_state[conv_state_indices, :], conv_state_ref)
     assert torch.allclose(out, out_ref, rtol=rtol, atol=atol)

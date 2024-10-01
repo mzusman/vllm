@@ -3,15 +3,19 @@ from torch import nn
 from torch.nn.parameter import Parameter
 
 from vllm.attention.backends.abstract import AttentionMetadata
-from vllm.distributed.parallel_state import get_tensor_model_parallel_rank, get_tensor_model_parallel_world_size
+from vllm.distributed.parallel_state import (
+    get_tensor_model_parallel_rank, get_tensor_model_parallel_world_size)
 from vllm.model_executor.custom_op import CustomOp
 from vllm.model_executor.layers.layernorm import RMSNorm
-from vllm.model_executor.layers.linear import ColumnParallelLinear, MergedColumnParallelLinear, RowParallelLinear
-from vllm.model_executor.layers.mamba.ops.causal_conv1d import causal_conv1d_fn, causal_conv1d_update
-from vllm.model_executor.layers.mamba.ops.mamba_ssm import selective_scan_fn, selective_state_update
+from vllm.model_executor.layers.linear import (ColumnParallelLinear,
+                                               RowParallelLinear)
+from vllm.model_executor.layers.mamba.ops.causal_conv1d import (
+    causal_conv1d_fn, causal_conv1d_update)
+from vllm.model_executor.layers.mamba.ops.mamba_ssm import (
+    selective_scan_fn, selective_state_update)
 from vllm.model_executor.utils import set_weight_attrs
 
-      
+
 # Adapted from transformers.models.mamba.modeling_mamba.MambaMixer
 class MambaMixer(CustomOp):
     """
@@ -24,23 +28,22 @@ class MambaMixer(CustomOp):
     **selective** state spaces)
     """
 
-    def __init__(self, hidden_size: int,
-                       ssm_state_size: int,
-                       conv_kernel_size: int,
-                       intermediate_size: int,
-                       time_step_rank: int,
-                       use_conv_bias: bool,
-                       use_bias: bool,
-                       use_rms_norm: bool,
-                       rms_norm_eps: float = 1e-5,
-                       activation = "silu"
-                       ):
+    def __init__(self,
+                 hidden_size: int,
+                 ssm_state_size: int,
+                 conv_kernel_size: int,
+                 intermediate_size: int,
+                 time_step_rank: int,
+                 use_conv_bias: bool,
+                 use_bias: bool,
+                 use_rms_norm: bool,
+                 rms_norm_eps: float = 1e-5,
+                 activation="silu"):
         super().__init__()
         self.time_step_rank = time_step_rank
         self.ssm_state_size = ssm_state_size
         self.use_rms_norm = use_rms_norm
         self.activation = activation
-      
 
         self.conv1d = ColumnParallelLinear(
             input_size=conv_kernel_size,
@@ -54,8 +57,8 @@ class MambaMixer(CustomOp):
         self.conv1d.weight.data = self.conv1d.weight.data.unsqueeze(1)
 
         self.in_proj = ColumnParallelLinear(hidden_size,
-                                                  intermediate_size * 2,
-                                                  bias=use_bias)
+                                            intermediate_size * 2,
+                                            bias=use_bias)
         # selective projection used to make dt, B and C input dependent
         self.x_proj = RowParallelLinear(
             intermediate_size,
@@ -99,39 +102,23 @@ class MambaMixer(CustomOp):
             input_is_parallel=True,
         )
 
-        self.dt_layernorm = RMSNorm(
-            time_step_rank,
-            eps=rms_norm_eps
-        ) if use_rms_norm else None
+        self.dt_layernorm = RMSNorm(time_step_rank,
+                                    eps=rms_norm_eps) if use_rms_norm else None
 
-        self.b_layernorm = RMSNorm(
-            ssm_state_size,
-            eps=rms_norm_eps
-        ) if use_rms_norm else None
+        self.b_layernorm = RMSNorm(ssm_state_size,
+                                   eps=rms_norm_eps) if use_rms_norm else None
 
-        self.c_layernorm = RMSNorm(
-            ssm_state_size,
-            eps=rms_norm_eps
-        ) if use_rms_norm else None
+        self.c_layernorm = RMSNorm(ssm_state_size,
+                                   eps=rms_norm_eps) if use_rms_norm else None
 
-
-    def forward_native(
-        self,
-        hidden_states: torch.Tensor,
-        attn_metadata: AttentionMetadata,
-        conv_state: torch.Tensor,
-        ssm_state: torch.Tensor
-    ):
+    def forward_native(self, hidden_states: torch.Tensor,
+                       attn_metadata: AttentionMetadata,
+                       conv_state: torch.Tensor, ssm_state: torch.Tensor):
         pass
 
-
-    def forward_cuda(
-        self,
-        hidden_states: torch.Tensor,
-        attn_metadata: AttentionMetadata,
-        conv_state: torch.Tensor,
-        ssm_state: torch.Tensor
-    ):
+    def forward_cuda(self, hidden_states: torch.Tensor,
+                     attn_metadata: AttentionMetadata,
+                     conv_state: torch.Tensor, ssm_state: torch.Tensor):
 
         # 1. Gated MLP's linear projection
         projected_states = self.in_proj(hidden_states)[0].transpose(-2, -1)
@@ -177,11 +164,9 @@ class MambaMixer(CustomOp):
             dim=-1,
         )
         if self.use_rms_norm:
-            assert None not in [
-                self.dt_layernorm,
-                self.b_layernorm,
-                self.c_layernorm,
-            ]
+            assert self.dt_layernorm is not None
+            assert self.b_layernorm is not None
+            assert self.c_layernorm is not None
             time_step = self.dt_layernorm(time_step.contiguous())
             B = self.b_layernorm(B.contiguous())
             C = self.c_layernorm(C.contiguous())
@@ -225,5 +210,3 @@ class MambaMixer(CustomOp):
         contextualized_states = self.out_proj(scan_outputs.transpose(-2,
                                                                      -1))[0]
         return contextualized_states
-
-

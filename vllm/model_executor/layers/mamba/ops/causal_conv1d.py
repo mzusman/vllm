@@ -1,10 +1,10 @@
 # Copyright (c) 2024, Tri Dao.
 # Adapted from https://github.com/Dao-AILab/causal-conv1d/blob/main/causal_conv1d/causal_conv1d_interface.py
 
-import torch.nn.functional as F
 from typing import Optional
 
 import torch
+import torch.nn.functional as F
 
 from vllm import _custom_ops as ops
 
@@ -90,7 +90,6 @@ def causal_conv1d_update(x: torch.Tensor,
     return out
 
 
-
 def causal_conv1d_native(
     x: torch.Tensor,
     weight: torch.Tensor,
@@ -137,11 +136,11 @@ def causal_conv1d_native(
 
 
 def causal_conv1d_update_native(x,
-                             conv_state,
-                             weight,
-                             bias=None,
-                             activation=None,
-                             cache_seqlens=None):
+                                conv_state,
+                                weight,
+                                bias=None,
+                                activation=None,
+                                cache_seqlens=None):
     """
     x: (batch, dim) or (batch, dim, seqlen)
     conv_state: (batch, dim, state_len), where state_len >= width - 1
@@ -189,5 +188,3 @@ def causal_conv1d_update_native(x,
     if unsqueeze:
         out = out.squeeze(-1)
     return (out if activation is None else F.silu(out)).to(dtype=dtype_in)
-
-
